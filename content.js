@@ -23,13 +23,42 @@
   /** Button mode: "run" starts the booking; "confirm" accepts the agent payment answer. */
   let mode = "run";
 
+  /** A visible BMS link's booking id, e.g. https://box-office.headout.com/bms/34259488 -> "34259488". */
+  function getBookingIdFromBmsLink() {
+    const bmsPattern = /box-office\.headout\.com\/bms\/(\d+)/i;
+
+    const anchorMatch = Array.from(document.querySelectorAll("a[href]"))
+      .filter((a) => a.offsetParent !== null)
+      .map((a) => a.href.match(bmsPattern)?.[1])
+      .find(Boolean);
+    if (anchorMatch) return anchorMatch;
+
+    // The link may appear as plain pasted text (not a real anchor) in a ticket note.
+    const walker = document.createTreeWalker(document.body, NodeFilter.SHOW_TEXT, {
+      acceptNode(node) {
+        if (!/box-office\.headout\.com/i.test(node.nodeValue ?? "")) return NodeFilter.FILTER_SKIP;
+        const el = node.parentElement;
+        return el && el.offsetParent !== null ? NodeFilter.FILTER_ACCEPT : NodeFilter.FILTER_SKIP;
+      },
+    });
+    for (let node = walker.nextNode(); node; node = walker.nextNode()) {
+      const match = node.nodeValue.match(bmsPattern);
+      if (match) return match[1];
+    }
+    return null;
+  }
+
   /**
-   * Booking id from the active ticket. Prefers an explicit "Booking Id: <n>" in
-   * the visible text, then the document title ("Booking id: <n>"), then any
-   * visible "Booking: <n>". Reads only visible nodes so hidden ticket panes
-   * (other open tabs) don't interfere.
+   * Booking id from the active ticket. Prefers the id from a visible BMS link
+   * (https://box-office.headout.com/bms/<id>), the most reliable/structured signal, falling
+   * back to an explicit "Booking Id: <n>" in the visible text, then the document title
+   * ("Booking id: <n>"), then any visible "Booking: <n>". Reads only visible nodes so hidden
+   * ticket panes (other open tabs) don't interfere.
    */
   function getBookingId() {
+    const fromBmsLink = getBookingIdFromBmsLink();
+    if (fromBmsLink) return fromBmsLink;
+
     const walker = document.createTreeWalker(document.body, NodeFilter.SHOW_TEXT, {
       acceptNode(node) {
         if (!/booking/i.test(node.nodeValue ?? "")) return NodeFilter.FILTER_SKIP;
@@ -52,6 +81,47 @@
       body.match(/Booking:\s*(\d{4,})/i)?.[1] ??
       null
     );
+  }
+
+  // Preference order for the "aiTA" pseudo-mail tool's generated inbox domains: Volitand,
+  // then Veritt, then Gmail. Per Headout's RO Lead workflow, a human or macro runs that tool
+  // BEFORE our button is clicked and posts "Pseudo Mail ID: <email>" as an internal ticket
+  // note -- we read that note rather than trying to drive aiTA's own panel ourselves.
+  const PSEUDO_DOMAIN_PRIORITY = ["volitand.com", "veritt.com", "gmail.com"];
+
+  /** Every "Pseudo Mail ID: <email>" value visible anywhere on the ticket, in document order. */
+  function getPseudoEmailCandidates() {
+    const walker = document.createTreeWalker(document.body, NodeFilter.SHOW_TEXT, {
+      acceptNode(node) {
+        if (!/pseudo\s*mail/i.test(node.nodeValue ?? "")) return NodeFilter.FILTER_SKIP;
+        const el = node.parentElement;
+        return el && el.offsetParent !== null ? NodeFilter.FILTER_ACCEPT : NodeFilter.FILTER_SKIP;
+      },
+    });
+    const parts = [];
+    for (let node = walker.nextNode(); node; node = walker.nextNode()) parts.push(node.nodeValue);
+    const body = parts.join("\n");
+    return [...body.matchAll(/Pseudo\s*Mail\s*ID\s*:\s*([^\s]+@[^\s,;]+)/gi)].map((m) =>
+      m[1].replace(/[.,;]+$/, "")
+    );
+  }
+
+  /**
+   * Pick one email from `candidates` per the Volitand > Veritt > Gmail preference. Within
+   * Gmail specifically, skip any "+alias" address and take the first plain one instead.
+   */
+  function pickPseudoEmail(candidates) {
+    for (const domain of PSEUDO_DOMAIN_PRIORITY) {
+      const forDomain = candidates.filter((email) => email.toLowerCase().endsWith(`@${domain}`));
+      if (forDomain.length === 0) continue;
+      if (domain === "gmail.com") {
+        const plain = forDomain.find((email) => !email.includes("+"));
+        if (plain) return plain;
+        continue;
+      }
+      return forDomain[0];
+    }
+    return null;
   }
 
   function sendMessage(message) {
@@ -102,9 +172,11 @@
       return;
     }
 
+    const pseudoEmail = pickPseudoEmail(getPseudoEmailCandidates());
+
     button.disabled = true;
     setLabel(button, BUSY_LABEL);
-    const response = await sendMessage({ type: RUN_BOOKING_AUTOFILL, bookingId });
+    const response = await sendMessage({ type: RUN_BOOKING_AUTOFILL, bookingId, pseudoEmail });
     button.disabled = false;
 
     if (!response?.ok) {

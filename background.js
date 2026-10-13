@@ -10,6 +10,7 @@
 import { getEnvironment } from "./config.js";
 import { fetchBooking, fetchGuestDetails, resolveVendorLink } from "./lib/aries.js";
 import { fetchAutofillScript, runAutofillOnTab } from "./lib/autofill.js";
+import { withAddressFallback } from "./lib/address-fallback.js";
 import { MESSAGES, BOOKING_STATUS } from "./lib/messages.js";
 import { isAuthenticated } from "./lib/session.js";
 import { createTab, waitForTabLoad } from "./lib/tabs.js";
@@ -20,16 +21,22 @@ const LOG = "[Headout Autofill]";
 /**
  * Booking id -> vendor link -> automation up to payment.
  * @param {string|number} bookingId
+ * @param {string|null} [pseudoEmail] - a "Pseudo Mail ID" already posted on the ticket
+ *   (via Headout's aiTA tool), preferred over Aries' own guest email when present.
  * @returns {Promise<{ link: string, status: string, result: object }>}
  */
-async function runBookingAutofill(bookingId) {
+async function runBookingAutofill(bookingId, pseudoEmail) {
   const env = await getEnvironment();
 
   const [bookingDetails, guestDetails] = await Promise.all([
     fetchBooking(env, bookingId),
     fetchGuestDetails(env, bookingId),
   ]);
-  const booking = { ...bookingDetails, guestDetails };
+  const guestDetailsWithAddress = withAddressFallback(guestDetails);
+  const booking = {
+    ...bookingDetails,
+    guestDetails: pseudoEmail ? { ...guestDetailsWithAddress, email: pseudoEmail } : guestDetailsWithAddress,
+  };
   const link = await resolveVendorLink(env, booking);
   const script = await fetchAutofillScript(link);
 
@@ -84,7 +91,7 @@ const HANDLERS = {
     return {};
   },
 
-  [MESSAGES.RUN_BOOKING_AUTOFILL]: ({ bookingId }) => runBookingAutofill(bookingId),
+  [MESSAGES.RUN_BOOKING_AUTOFILL]: ({ bookingId, pseudoEmail }) => runBookingAutofill(bookingId, pseudoEmail),
 
   [MESSAGES.PAYMENT_DECISION]: ({ paid }) => acceptPaymentDecision(Boolean(paid)),
 };
