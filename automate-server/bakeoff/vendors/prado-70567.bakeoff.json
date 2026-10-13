@@ -1,0 +1,45 @@
+{
+  "vendorId": 2078,
+  "vendorName": "Prado Museum_NP",
+  "portalUrl": "https://entradas.museodelprado.es",
+  "requiresCredentials": false,
+  "customInstructions": [
+    {
+      "text": "If a cookie-consent banner is visible right now, click its accept/agree button once to dismiss it. If no such banner is visible, do nothing for this step.",
+      "maxAttempts": 1
+    },
+    "Change the language to English using the language switcher in the top right. Verify the page text actually changed to English before moving on — if it's still Spanish, click the switcher again.",
+    "Select the visit date from the calendar — use the \"Date\" value given below.",
+    {
+      "text": "Select the number of \"General + Exhibitions time pass\" as pax, using the \"Pax count\" value below for the quantity. If that ticket type is not available, select \"General\" pax instead, same quantity.",
+      "maxAttempts": 5
+    },
+    "Click to open the time-slot picker and select a time slot (if the exact time isn't available, it's fine to pick a slot up to 45 minutes after the requested time).",
+    "The time-slot picker is a popup/modal that stays open after you click a time -- it does not close itself. Close/confirm it now: look for a Confirm/Aceptar/checkmark button inside the popup and click it, or click the already-selected time slot a second time, or click the X/close control on the popup. Do not proceed to the next step until this popup is fully closed and you can see the main checkout page again.",
+    "Click the Continue/Continuar button to proceed past ticket selection.",
+    "Skip all add-ons on the next step — do not add an audio guide or any other extra. Click Continue/Continuar again.",
+    "On the customer details form, fill ONLY the First name field, using the \"First name\" value given below. Do not touch any other field on this form yet.",
+    "On the customer details form, fill ONLY the Last name field, using the \"Last name\" value given below. Do not touch any other field on this form yet.",
+    "On the customer details form, fill ONLY the Email field, using the \"Email\" value given below. Do not touch any other field on this form yet.",
+    "On the customer details form, fill ONLY the Address line field, using the \"Address line\" value given below. Do not touch any other field on this form yet.",
+    "On the customer details form, fill ONLY the City field, using the \"City\" value given below. Do not touch any other field on this form yet.",
+    "On the customer details form, fill ONLY the Postal code field, using the \"Postal code\" value given below. Do not touch any other field on this form yet.",
+    "On the customer details form, if there is a Country field, set it to the \"Country\" value given below.",
+    "Proceed toward the payment page. Do not do anything on the payment page itself — see the safety rule below."
+  ],
+  "fieldValueKeys": {
+    "Date": "inventoryDate",
+    "Pax count": "totalPax",
+    "First name": "guestDetails.firstName",
+    "Last name": "guestDetails.lastName",
+    "Email": "guestDetails.email",
+    "Address line": "guestDetails.address.line1",
+    "City": "guestDetails.address.city",
+    "Postal code": "guestDetails.address.postalCode",
+    "Country": "guestDetails.address.country"
+  },
+  "finalAction": {
+    "description": "Proceed to the payment page and stop there",
+    "mustStopAfter": true
+  }
+}

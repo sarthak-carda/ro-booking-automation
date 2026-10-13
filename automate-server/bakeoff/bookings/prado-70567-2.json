@@ -1,0 +1,24 @@
+{
+  "bookingId": 91100002,
+  "vendorId": 2078,
+  "tourId": 70567,
+  "inventoryDate": "2026-10-22",
+  "fulfillmentType": "SELF_FULFILLED_VOUCHER",
+  "currency": "EUR",
+  "totalPax": 2,
+  "agentEmail": "sarthak.singhal@headout.com",
+  "agentName": "Sarthak Singhal",
+  "guestDetails": {
+    "firstName": "Sam",
+    "lastName": "Rivera",
+    "email": "sam.rivera.test@example.com",
+    "phone": "+34600333444",
+    "address": {
+      "line1": "Calle Ficticia 12",
+      "city": "Madrid",
+      "postalCode": "28013",
+      "country": "Spain"
+    },
+    "paxBreakup": [{ "type": "ADULT", "count": 2 }]
+  }
+}

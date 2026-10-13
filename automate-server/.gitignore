@@ -1,0 +1,12 @@
+node_modules/
+.env
+.venv/
+bakeoff/.venv/
+__pycache__/
+**/__pycache__/
+.pytest_cache/
+data/*.json
+!data/.gitkeep
+bakeoff/results/*.json
+!bakeoff/results/.gitkeep
+.DS_Store

@@ -1,0 +1,36 @@
+{
+  "vendorId": 4105,
+  "vendorName": "TOSC Manual (ticketone.it / Reggia di Caserta)",
+  "portalUrl": "https://www.ticketone.it/en/artist/reggia-caserta/reggia-di-caserta-1818672/",
+  "requiresCredentials": false,
+  "customInstructions": [
+    "Translate the page into English if it isn't already, using the site's language switcher.",
+    "If a server connection error appears at any point, this is a known transient issue with the site — simply reload the page and continue from where you were.",
+    "Click the 'Buy Now' button.",
+    "Choose the visit date from the available options — use the Date value given below.",
+    "In the 'Apartments, Royal Park and English Garden' section (NOT the 'Only Park' option), add the number of participants using the Pax count value below (all as full-price adults), select a time slot, and enter the Fiscal code value below into the fiscal code field.",
+    "Click the 'Tickets' button to proceed toward the final payment page.",
+    "Click 'Proceed with the Purchase'. If offered a 'Biglietto Sicuro'/'Ticket Safe' insurance add-on, decline it (choose the option that says you assume full risk / no insurance).",
+    "If prompted to log in or create an account, create a NEW account using the Email and Account password values given below, choosing the 'Individual' account type if asked. If asked for a fiscal code again during account creation, use the same Fiscal code value. If asked for consent/marketing checkboxes, decline/deny them.",
+    "Fill in guest details (first name, last name) and address using the values given below, using a placeholder address if the exact one given doesn't fit the form.",
+    "Continue toward the payment page and stop there — see the safety rule below."
+  ],
+  "fieldValueKeys": {
+    "Date": "inventoryDate",
+    "Pax count": "totalPax",
+    "Fiscal code": "constants.fiscalCode",
+    "Email": "guestDetails.email",
+    "Account password": "constants.accountPassword",
+    "First name": "guestDetails.firstName",
+    "Last name": "guestDetails.lastName",
+    "Address line": "guestDetails.address.line1",
+    "City": "guestDetails.address.city",
+    "Postal code": "guestDetails.address.postalCode",
+    "Country": "guestDetails.address.country"
+  },
+  "finalAction": {
+    "description": "Proceed to the payment page and stop there",
+    "mustStopAfter": true
+  },
+  "notes": "User flagged that a real human doing this manually sometimes needs Firefox+incognito+VPN due to site quirks/anti-bot behavior -- omitted from agent instructions per the user's own note that it 'might not be necessary' for automation, but worth revisiting if every tool fails here in a way that looks like bot detection specifically (e.g. immediate blocks, CAPTCHAs) rather than normal task difficulty."
+}

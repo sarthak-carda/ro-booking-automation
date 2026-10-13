@@ -1,0 +1,28 @@
+{
+  "bookingId": 91200001,
+  "vendorId": 4105,
+  "tourId": 50828,
+  "inventoryDate": "2026-11-05",
+  "fulfillmentType": "SELF_FULFILLED_VOUCHER",
+  "currency": "EUR",
+  "totalPax": 2,
+  "agentEmail": "sarthak.singhal@headout.com",
+  "agentName": "Sarthak Singhal",
+  "guestDetails": {
+    "firstName": "Jordan",
+    "lastName": "Blake",
+    "email": "jordan.blake.test@example.com",
+    "phone": "+39320111222",
+    "address": {
+      "line1": "Via di Prova 45",
+      "city": "Caserta",
+      "postalCode": "81100",
+      "country": "Italy"
+    },
+    "paxBreakup": [{ "type": "ADULT", "count": 2 }]
+  },
+  "constants": {
+    "fiscalCode": "EE1",
+    "accountPassword": "Forget@123"
+  }
+}

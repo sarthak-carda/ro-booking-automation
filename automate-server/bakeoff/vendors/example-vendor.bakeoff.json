@@ -1,0 +1,18 @@
+{
+  "vendorId": 9999,
+  "vendorName": "Example Vendor (offline demo fixture)",
+  "portalUrl": "http://127.0.0.1:4599/checkout.html",
+  "requiresCredentials": false,
+  "startLocalFixtureServer": { "dir": "fixtures/html/example-vendor", "port": 4599 },
+  "fields": [
+    { "fieldKey": "guestDetails.firstName", "label": "First name", "type": "text" },
+    { "fieldKey": "guestDetails.lastName", "label": "Last name", "type": "text" },
+    { "fieldKey": "guestDetails.email", "label": "Email", "type": "email" },
+    { "fieldKey": "inventoryDate", "label": "Tour date", "type": "text" },
+    { "fieldKey": "totalPax", "label": "Pax count", "type": "number" }
+  ],
+  "finalAction": {
+    "description": "Click the 'Continue to payment' button",
+    "mustStopAfter": true
+  }
+}

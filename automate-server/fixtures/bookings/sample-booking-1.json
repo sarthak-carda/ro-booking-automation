@@ -1,0 +1,20 @@
+{
+  "bookingId": 90210001,
+  "vendorId": 9999,
+  "tourId": 55501,
+  "inventoryDate": "2026-07-19",
+  "fulfillmentType": "SELF_FULFILLED_VOUCHER",
+  "currency": "EUR",
+  "totalPax": 2,
+  "agentEmail": "sarthak.singhal@headout.com",
+  "agentName": "Sarthak Singhal",
+  "guestDetails": {
+    "firstName": "Jamie",
+    "lastName": "Rivera",
+    "email": "jamie.rivera@example.com",
+    "phone": "+1-555-0142",
+    "paxBreakup": [
+      { "type": "ADULT", "count": 2 }
+    ]
+  }
+}

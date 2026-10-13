@@ -1,0 +1,74 @@
+{
+  "vendorId": 9999,
+  "portalUrl": "http://127.0.0.1:4599/checkout.html",
+  "capturedAt": "2026-09-18T00:00:00.000Z",
+  "loginRequired": false,
+  "steps": [
+    {
+      "index": 0,
+      "action": "fill",
+      "url": "http://127.0.0.1:4599/checkout.html",
+      "selector_candidates": ["#first-name", "[name=\"firstName\"]"],
+      "dom_snapshot": "fixtures/html/example-vendor/checkout.html",
+      "screenshot": null,
+      "field_to_booking_key": "guestDetails.firstName",
+      "requires_credentials": false,
+      "credential_key": null
+    },
+    {
+      "index": 1,
+      "action": "fill",
+      "url": "http://127.0.0.1:4599/checkout.html",
+      "selector_candidates": ["#last-name", "[name=\"lastName\"]"],
+      "dom_snapshot": "fixtures/html/example-vendor/checkout.html",
+      "screenshot": null,
+      "field_to_booking_key": "guestDetails.lastName",
+      "requires_credentials": false,
+      "credential_key": null
+    },
+    {
+      "index": 2,
+      "action": "fill",
+      "url": "http://127.0.0.1:4599/checkout.html",
+      "selector_candidates": ["#email", "[name=\"email\"]"],
+      "dom_snapshot": "fixtures/html/example-vendor/checkout.html",
+      "screenshot": null,
+      "field_to_booking_key": "guestDetails.email",
+      "requires_credentials": false,
+      "credential_key": null
+    },
+    {
+      "index": 3,
+      "action": "fill",
+      "url": "http://127.0.0.1:4599/checkout.html",
+      "selector_candidates": ["#tour-date", "[name=\"tourDate\"]"],
+      "dom_snapshot": "fixtures/html/example-vendor/checkout.html",
+      "screenshot": null,
+      "field_to_booking_key": "inventoryDate",
+      "requires_credentials": false,
+      "credential_key": null
+    },
+    {
+      "index": 4,
+      "action": "fill",
+      "url": "http://127.0.0.1:4599/checkout.html",
+      "selector_candidates": ["#pax-count", "[name=\"paxCount\"]"],
+      "dom_snapshot": "fixtures/html/example-vendor/checkout.html",
+      "screenshot": null,
+      "field_to_booking_key": "totalPax",
+      "requires_credentials": false,
+      "credential_key": null
+    },
+    {
+      "index": 5,
+      "action": "click",
+      "url": "http://127.0.0.1:4599/checkout.html",
+      "selector_candidates": ["#continue-btn"],
+      "dom_snapshot": "fixtures/html/example-vendor/checkout.html",
+      "screenshot": null,
+      "field_to_booking_key": null,
+      "requires_credentials": false,
+      "credential_key": null
+    }
+  ]
+}

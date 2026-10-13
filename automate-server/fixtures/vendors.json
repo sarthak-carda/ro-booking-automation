@@ -1,0 +1,59 @@
+{
+  "9999": {
+    "id": 9999,
+    "name": "Example Vendor (offline demo fixture)",
+    "portalUrl": "http://127.0.0.1:4599/checkout.html",
+    "requiresCredentials": false,
+    "fulfillmentType": "SELF_FULFILLED_VOUCHER",
+    "loginRequirementConfirmed": true,
+    "notes": "Synthetic vendor served from fixtures/html/example-vendor/ — proves the pipeline/audit/self-heal mechanism without touching a real vendor site or risking a real payment."
+  },
+  "4105": {
+    "id": 4105,
+    "name": "TOSC Manual",
+    "portalUrl": null,
+    "requiresCredentials": true,
+    "loginRequirementConfirmed": true,
+    "notes": "Confirmed 2026-09-23: this vendor name spans (at least) TWO distinct portals, so it likely needs two separate shipped scripts (registry is keyed by host) — ticketone.it (Reggia di Caserta, tour 50828/57671; account creation mid-checkout, not a pre-existing login) and vive.midaticket.com (Altare della Patria, tour 50832; no login mentioned). See bakeoff/vendors/ for per-portal configs as they're built."
+  },
+  "2078": {
+    "id": 2078,
+    "name": "Prado Museum_NP",
+    "portalUrl": "https://entradas.museodelprado.es",
+    "requiresCredentials": false,
+    "loginRequirementConfirmed": true,
+    "notes": "Confirmed 2026-09-23, no login needed. Tours 70567/43065/83369 share this one checkout flow. See bakeoff/vendors/prado-70567.bakeoff.json."
+  },
+  "1375": {
+    "id": 1375,
+    "name": "OPA Pisa",
+    "portalUrl": null,
+    "requiresCredentials": null,
+    "loginRequirementConfirmed": false,
+    "notes": "Awaiting portal URL + login-requirement confirmation (plan §4). Do not guess."
+  },
+  "3451": {
+    "id": 3451,
+    "name": "Distribusion Technologies GmbH",
+    "portalUrl": null,
+    "requiresCredentials": null,
+    "loginRequirementConfirmed": false,
+    "notes": "Awaiting portal URL + login-requirement confirmation (plan §4). Do not guess."
+  },
+  "3097": {
+    "id": 3097,
+    "name": "Panorama Langkawi Sdn Bhd",
+    "portalUrl": null,
+    "requiresCredentials": null,
+    "loginRequirementConfirmed": false,
+    "notes": "Awaiting portal URL + login-requirement confirmation (plan §4). Do not guess."
+  },
+  "1971": {
+    "id": 1971,
+    "name": "Alhambra Official",
+    "portalUrl": null,
+    "requiresCredentials": null,
+    "loginRequirementConfirmed": false,
+    "notes": "Awaiting portal URL + login-requirement confirmation (plan §4). Do not guess."
+  }
+}

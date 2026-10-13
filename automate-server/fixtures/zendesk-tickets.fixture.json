@@ -1,0 +1,58 @@
+[
+  {
+    "vendorId": 4105,
+    "tourId": 71001,
+    "vendorName": "TOSC Manual",
+    "manualTicketCount": 42,
+    "windowStart": "2026-08-19",
+    "windowEnd": "2026-09-18"
+  },
+  {
+    "vendorId": 4105,
+    "tourId": 71002,
+    "vendorName": "TOSC Manual",
+    "manualTicketCount": 11,
+    "windowStart": "2026-08-19",
+    "windowEnd": "2026-09-18"
+  },
+  {
+    "vendorId": 2078,
+    "tourId": 71010,
+    "vendorName": "Prado Museum_NP",
+    "manualTicketCount": 35,
+    "windowStart": "2026-08-19",
+    "windowEnd": "2026-09-18"
+  },
+  {
+    "vendorId": 1375,
+    "tourId": 71020,
+    "vendorName": "OPA Pisa",
+    "manualTicketCount": 18,
+    "windowStart": "2026-08-19",
+    "windowEnd": "2026-09-18"
+  },
+  {
+    "vendorId": 3451,
+    "tourId": 71030,
+    "vendorName": "Distribusion Technologies GmbH",
+    "manualTicketCount": 33,
+    "windowStart": "2026-08-19",
+    "windowEnd": "2026-09-18"
+  },
+  {
+    "vendorId": 3097,
+    "tourId": 71040,
+    "vendorName": "Panorama Langkawi Sdn Bhd",
+    "manualTicketCount": 29,
+    "windowStart": "2026-08-19",
+    "windowEnd": "2026-09-18"
+  },
+  {
+    "vendorId": 1971,
+    "tourId": 71050,
+    "vendorName": "Alhambra Official",
+    "manualTicketCount": 31,
+    "windowStart": "2026-08-19",
+    "windowEnd": "2026-09-18"
+  }
+]

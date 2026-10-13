@@ -1,0 +1,41 @@
+{
+  "vendorId": 4105,
+  "vendorName": "TOSC Manual (vive.midaticket.com / Altare della Patria)",
+  "portalUrl": "https://vive.midaticket.com/en/eventi/ingresso/",
+  "requiresCredentials": false,
+  "customInstructions": [
+    {
+      "text": "If a cookie-consent banner with an 'Accept All' button is currently visible, click 'Accept All' ONCE. A small round consent-preferences icon may remain in a corner of the page afterward — that icon is NOT a banner and must NOT be clicked. If no banner with an 'Accept All' button is visible, do nothing for this step.",
+      "maxAttempts": 1
+    },
+    "A calendar headed 'Choose the date of the visit' is shown, one month at a time, with 'Previous'/'Next' arrow controls next to the month name. FIRST check the month/year name currently displayed above the calendar grid. If it ALREADY matches the target month (from the Date value below), do nothing for this step — do not click 'Next'. Only if it does not match yet, click the 'Next' arrow once (it may skip forward more than one month, since months with no availability are skipped automatically).",
+    "Click the day-of-month cell matching the Date value below on the calendar (day cells with no strikethrough/greyed-out 'Non disponibile online' label are selectable).",
+    "A 'Choose the time of the visit' section appears below the calendar with one or more time-slot boxes (e.g. '9:30 AM - 7:00 PM'). Click the first available time-slot box.",
+    {
+      "text": "An 'Add tickets to cart' section appears with ticket-type rows, each with a '-', a quantity number, and a '+' button. Find the row labeled 'Full price' specifically (not 'Reduction'/'Free'). Check the quantity number currently shown for that row: if it is ALREADY EQUAL to the Pax count value below, do nothing for this step. Otherwise click the small '+' button immediately to its right ONCE.",
+      "maxAttempts": 8
+    },
+    "Once the quantity is set, a cart summary on the right updates automatically (no separate 'add to cart' click is needed) and a 'GO TO PAYMENT' button becomes active/blue. Click it.",
+    "On the checkout page, fill ONLY the 'Last name' field, using the \"Last name\" value given below. Do not touch any other field on this form yet.",
+    "On the checkout page, fill ONLY the 'First name' field, using the \"First name\" value given below. Do not touch any other field on this form yet.",
+    "On the checkout page, fill ONLY the 'E-mail' field, using the \"Email\" value given below. Do not touch any other field on this form yet.",
+    "On the checkout page, fill ONLY the 'Confirm your e-mail' field, using the same \"Email\" value given below. Do not touch any other field on this form yet.",
+    {
+      "text": "Check ONLY the FIRST checkbox on the page (the one closest to the top, right below the email fields) ONCE. That is the only mandatory one. Do NOT check any other checkbox (there may be a second/third one below it, e.g. Privacy Policy or Newsletter consent) — leave those alone.",
+      "maxAttempts": 1
+    },
+    "Click the 'CONFIRM YOUR RESERVATION' button. This navigates to a real third-party payment page (Nexi) showing a 'Choose payment method' screen — STOP THERE. Do not click 'USE PAYMENT CARD', Google Pay, PayPal, or any other payment option, and do not enter any payment details — see the safety rule below."
+  ],
+  "fieldValueKeys": {
+    "Date": "inventoryDate",
+    "Pax count": "totalPax",
+    "First name": "guestDetails.firstName",
+    "Last name": "guestDetails.lastName",
+    "Email": "guestDetails.email"
+  },
+  "finalAction": {
+    "description": "Proceed to the payment page and stop there",
+    "mustStopAfter": true
+  },
+  "notes": "Per the user: DO NOT send an invoice, and fulfillment for real bookings checks support@headout.com for QR-code tickets rather than downloading from the portal directly -- both are post-payment fulfillment details, not relevant to what the generated script does (it always stops before payment)."
+}

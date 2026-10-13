@@ -1,0 +1,10 @@
+{
+  "name": "automate-server-node-adapter",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Node.js is no longer used to run this service (see README.md — it's FastAPI/Python now). This package.json exists ONLY for bakeoff/adapters/stagehandAdapter.mjs, which needs the Stagehand SDK — a Node-only library with no Python equivalent — invoked as a subprocess from bakeoff/run_bakeoff.py under a Node >=22 binary (see bakeoff/lib/resolve_runtime.py).",
+  "type": "module",
+  "dependencies": {
+    "@browserbasehq/stagehand": "^4.1.0"
+  }
+}

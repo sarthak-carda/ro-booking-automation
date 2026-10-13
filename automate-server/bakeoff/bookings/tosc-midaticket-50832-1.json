@@ -1,0 +1,17 @@
+{
+  "bookingId": 91300001,
+  "vendorId": 4105,
+  "tourId": 50832,
+  "inventoryDate": "2026-11-05",
+  "fulfillmentType": "SELF_FULFILLED_VOUCHER",
+  "currency": "EUR",
+  "totalPax": 2,
+  "agentEmail": "sarthak.singhal@headout.com",
+  "agentName": "Sarthak Singhal",
+  "guestDetails": {
+    "firstName": "Jordan",
+    "lastName": "Blake",
+    "email": "jordan.blake.test@example.com",
+    "phone": "+39320111222"
+  }
+}

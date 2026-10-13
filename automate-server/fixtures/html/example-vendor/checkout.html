@@ -1,0 +1,21 @@
+<!doctype html>
+<html>
+<head><meta charset="utf-8"><title>Example Vendor Checkout (offline fixture)</title></head>
+<body>
+  <h1>Book your tour</h1>
+  <form id="checkout-form" onsubmit="return false;">
+    <label>First name <input id="first-name" name="firstName" type="text" /></label><br/>
+    <label>Last name <input id="last-name" name="lastName" type="text" /></label><br/>
+    <label>Email <input id="email" name="email" type="email" /></label><br/>
+    <label>Tour date <input id="tour-date" name="tourDate" type="text" /></label><br/>
+    <label>Pax count <input id="pax-count" name="paxCount" type="number" /></label><br/>
+    <button id="continue-btn" type="button" onclick="document.getElementById('payment-section').hidden = false;">
+      Continue to payment
+    </button>
+  </form>
+  <section id="payment-section" hidden>
+    <h2>Payment</h2>
+    <p>This offline fixture stops here on purpose — a real generated script must never fill or submit this section.</p>
+  </section>
+</body>
+</html>

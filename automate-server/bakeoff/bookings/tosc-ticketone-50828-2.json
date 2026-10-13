@@ -1,0 +1,28 @@
+{
+  "bookingId": 91200002,
+  "vendorId": 4105,
+  "tourId": 50828,
+  "inventoryDate": "2026-11-12",
+  "fulfillmentType": "SELF_FULFILLED_VOUCHER",
+  "currency": "EUR",
+  "totalPax": 2,
+  "agentEmail": "sarthak.singhal@headout.com",
+  "agentName": "Sarthak Singhal",
+  "guestDetails": {
+    "firstName": "Sam",
+    "lastName": "Rivera",
+    "email": "sam.rivera.test@example.com",
+    "phone": "+39320333444",
+    "address": {
+      "line1": "Via Finta 8",
+      "city": "Caserta",
+      "postalCode": "81100",
+      "country": "Italy"
+    },
+    "paxBreakup": [{ "type": "ADULT", "count": 2 }]
+  },
+  "constants": {
+    "fiscalCode": "EE1",
+    "accountPassword": "Forget@123"
+  }
+}
