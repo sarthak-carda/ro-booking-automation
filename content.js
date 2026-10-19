@@ -24,17 +24,19 @@
   let mode = "run";
 
   /**
-   * Booking id from the active ticket. Prefers an explicit "Booking Id: <n>" in
-   * the visible text, then the document title ("Booking id: <n>"), then any
-   * visible "Booking: <n>". Reads only visible nodes so hidden ticket panes
-   * (other open tabs) don't interfere.
+   * Visible text of the active ticket, one text node per line, plus any visible link
+   * hrefs. Reads only visible nodes so hidden ticket panes (other open tabs) don't
+   * interfere.
    */
-  function getBookingId() {
+  function getVisibleTicketText() {
+    // Zendesk's workspace tab strip lists EVERY open ticket's title, including its
+    // "(Booking ID <n>)" -- visible, and earlier in the DOM than the active ticket, so with
+    // two ticket tabs open the other ticket's booking id (and the wrong booking) won.
+    const IN_TAB_STRIP = '[data-test-id^="header-tab"]';
     const walker = document.createTreeWalker(document.body, NodeFilter.SHOW_TEXT, {
       acceptNode(node) {
-        if (!/booking/i.test(node.nodeValue ?? "")) return NodeFilter.FILTER_SKIP;
         const el = node.parentElement;
-        return el && el.offsetParent !== null
+        return el && el.offsetParent !== null && !el.closest(IN_TAB_STRIP)
           ? NodeFilter.FILTER_ACCEPT
           : NodeFilter.FILTER_SKIP;
       },
@@ -44,14 +46,48 @@
     for (let node = walker.nextNode(); node; node = walker.nextNode()) {
       parts.push(node.nodeValue);
     }
-    const body = parts.join("\n");
+    document.querySelectorAll("a[href]").forEach((a) => {
+      if (a.offsetParent !== null) parts.push(a.getAttribute("href"));
+    });
+    return parts.join("\n");
+  }
+
+  /**
+   * Booking id from the active ticket. Prefers an explicit "Booking Id: <n>" in
+   * the visible text, then the document title ("Booking id: <n>"), then any
+   * visible "Booking: <n>", then a bare BMS/Aries link
+   * (`.../bms/<n>` or `.../bms/booking/<n>`). The link fallback exists for tickets
+   * whose comments carry nothing but "BMS link: https://box-office.headout.com/bms/<n>"
+   * -- no "Booking" wording anywhere for the other patterns to match.
+   */
+  function getBookingId() {
+    const body = getVisibleTicketText();
 
     return (
       body.match(/Booking\s*[_ ]?Id\s*[:#]?\s*(\d{4,})/i)?.[1] ??
       document.title.match(/Booking\s*[_ ]?id\s*[:#]?\s*(\d{4,})/i)?.[1] ??
       body.match(/Booking:\s*(\d{4,})/i)?.[1] ??
+      body.match(/headout\.com\/bms\/(?:booking\/)?(\d{4,})/i)?.[1] ??
       null
     );
+  }
+
+  /**
+   * Pseudo (volitand / veritt / gmail) email an ops agent leaves in an internal
+   * ticket comment as "Pseudo Mail ID: <email>". Vendors must be given this instead
+   * of the guest's real email. Keyed on the label rather than the domain: tickets
+   * also carry unrelated veritt addresses (e.g. the vendor's "Booking Intimation
+   * Email"), which must not be picked up. Falls back to an address containing this
+   * booking's id (`name_<bookingId>@...`) if the label is missing.
+   */
+  function getPseudoEmail(bookingId) {
+    const body = getVisibleTicketText();
+    const labelled = body.match(/Pseudo\s*Mail(?:\s*ID)?\s*[:\-]\s*([^\s|,;<>]+@[^\s|,;<>]+)/i)?.[1];
+    const byId = bookingId
+      ? body.match(new RegExp(`[\\w.+-]+_${bookingId}@[\\w.-]+\\.[A-Za-z]{2,}`, "i"))?.[0]
+      : null;
+    const email = labelled ?? byId ?? null;
+    return email ? email.replace(/[.)\]]+$/, "") : null;
   }
 
   function sendMessage(message) {
@@ -94,17 +130,50 @@
     setLabel(button, label);
   }
 
+  /**
+   * Real gap found 2026-10-07: getBookingId() used to be checked exactly once, synchronously,
+   * at click time. The floating button renders immediately on page load (its own
+   * MutationObserver doesn't wait for ticket content), but Zendesk's own SPA can still be
+   * asynchronously loading the ticket's subject/body/sidebar fields at that exact moment --
+   * especially right after opening a freshly-created ticket. Confirmed live: a click in that
+   * window failed with "Booking ID not found" on a ticket whose booking ID was present and
+   * extractable moments later, unchanged. Poll briefly instead of checking once.
+   */
+  async function pollFor(read, deadlineMs = 3000, intervalMs = 300) {
+    const deadline = Date.now() + deadlineMs;
+    let value = read();
+    while (!value && Date.now() < deadline) {
+      await new Promise((r) => setTimeout(r, intervalMs));
+      value = read();
+    }
+    return value;
+  }
+
+  const getBookingIdWithRetry = () => pollFor(getBookingId);
+
   /** Start the booking: booking id -> vendor link -> automation up to payment. */
   async function runBooking(button) {
-    const bookingId = getBookingId();
+    // Disabled immediately, before the booking-id retry even starts -- otherwise the button
+    // sits clickable (looking idle) for up to 3s while getBookingIdWithRetry polls, and a
+    // second click in that window would kick off a second, overlapping run.
+    button.disabled = true;
+    setLabel(button, BUSY_LABEL);
+
+    const bookingId = await getBookingIdWithRetry();
     if (!bookingId) {
+      button.disabled = false;
       flashError(button, "Booking ID not found");
       return;
     }
 
-    button.disabled = true;
-    setLabel(button, BUSY_LABEL);
-    const response = await sendMessage({ type: RUN_BOOKING_AUTOFILL, bookingId });
+    const pseudoEmail = await pollFor(() => getPseudoEmail(bookingId));
+    if (!pseudoEmail) {
+      button.disabled = false;
+      flashError(button, "Pseudo mail not found in ticket comments");
+      return;
+    }
+
+    const response = await sendMessage({ type: RUN_BOOKING_AUTOFILL, bookingId, pseudoEmail });
     button.disabled = false;
 
     if (!response?.ok) {
@@ -112,8 +181,17 @@
       return;
     }
     const result = response.result ?? {};
+    // Real bug found 2026-10-07: this used to be a plain if/else on CONFIRMED, which put
+    // EVERY non-CONFIRMED status -- PAYMENT_REQUIRED (genuine success, awaiting manual
+    // payment) AND ERROR (the script actually failed) alike -- into the same "enterConfirmMode"
+    // branch. Confirmed live: a run that failed on an early step (vendor tab never left the
+    // homepage) still showed the "Script worked?" Yes/No prompt, exactly as if it had reached
+    // payment. ERROR must flash the real failure instead of asking the agent to confirm
+    // something that never happened.
     if (response.status === STATUS.CONFIRMED) {
       flashSuccess(button, result.reference ? `Booked ✓ ${result.reference}` : "Booked ✓");
+    } else if (response.status === STATUS.ERROR) {
+      flashError(button, result.error ? `Failed: ${result.error}` : "Automation failed");
     } else {
       enterConfirmMode(button.closest(`#${CONTROL_ID}`));
     }

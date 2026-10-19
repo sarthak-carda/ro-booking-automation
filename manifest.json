@@ -1,8 +1,8 @@
 {
   "manifest_version": 3,
-  "name": "Headout Vendor Autofill",
-  "version": "1.0.0",
-  "description": "From a Zendesk ticket, look up the booking in Aries and autofill the vendor form. Shares the Ory session with *.headout.com.",
+  "name": "Headout Vendor Autofill (POC — Prado/TOSC only)",
+  "version": "1.1.0",
+  "description": "POC build: Prado + TOSC/midaticket.com only, no automate-server required. From a Zendesk ticket, look up the booking in Aries and autofill the vendor form. Shares the Ory session with *.headout.com.",
   "action": {
     "default_popup": "popup.html",
     "default_title": "Headout Vendor Autofill",

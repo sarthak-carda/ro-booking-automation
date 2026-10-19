@@ -11,6 +11,13 @@
  * @property {string} label        Human-readable name.
  * @property {string} oryBase      Ory auth/login origin.
  * @property {string} ariesBase    Aries API origin.
+ * @property {string} boxOfficeBase BMS (box-office) origin — some Aries sub-resources
+ *   (confirmed: guestDetails) are not reachable directly on ariesBase and must be called
+ *   through BMS's own reverse proxy at `${boxOfficeBase}/proxy/aries/<same path>` instead.
+ *   Found 2026-10 by watching the real BMS page's own network traffic for a booking whose
+ *   direct `ariesBase` guestDetails call 404'd: BMS successfully calls
+ *   `box-office.headout.com/proxy/aries/apis/v2/order-fulfillment/booking/{id}/guestDetails`
+ *   (200) for the exact same path direct-to-Aries 404s on. See lib/aries.js.
  * @property {string} eos          EOS app origin (used as the login `return_to`).
  * @property {string} cookieDomain Registrable domain the session cookie lives on.
  */
@@ -21,6 +28,7 @@ export const ENVIRONMENTS = {
     label: "Production",
     oryBase: "https://auth.headout.com",
     ariesBase: "https://aries.headout.com",
+    boxOfficeBase: "https://box-office.headout.com",
     eos: "https://eos.headout.com",
     cookieDomain: "headout.com",
   },
@@ -28,6 +36,9 @@ export const ENVIRONMENTS = {
     label: "Test / Staging",
     oryBase: "https://auth.test-headout.com",
     ariesBase: "https://aries.test-headout.com",
+    // Unverified: mirrors the prod host's naming pattern, but unlike the other test-env
+    // hosts above, this one hasn't actually been confirmed to exist/respond the same way.
+    boxOfficeBase: "https://box-office.test-headout.com",
     eos: "https://eos.test-headout.com",
     cookieDomain: "test-headout.com",
   },
