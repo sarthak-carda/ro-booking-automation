@@ -27,9 +27,102 @@ system elsewhere greps the step-level message format, so the text must match
 exactly, not just convey the same meaning.
 """
 import json
-from typing import Any, Union
+import os
+import zipfile
+from pathlib import Path
+from typing import Any, Optional, Union
 
 VALID_ACTIONS = {"fill", "click", "submit", "navigate"}
+
+# A "reference" is an alternative to a funnel recording: material from a verified run of
+# the same flow that Stage 2 reads as ground truth and TRANSLATES into an injectable
+# HeadoutAutomation script. It is passed to the model as plain text — no converter program;
+# the Stage 2 model is the converter, which is also what keeps loops/waits/conditionals that
+# a flat step recording would throw away.
+#   {
+#     "kind": "prometheus-script" | "devtools-recorder" | "other",
+#     "content": str,                # the script / exported recording, verbatim
+#     "sampleOutput": str | None,    # optional: what a successful run produced (data.json)
+#     "fieldMapping": dict | None,   # optional: input label/flag -> dotted booking key
+#   }
+REFERENCE_KINDS = {"prometheus-script", "devtools-recorder", "other"}
+
+# Real Prometheus bundles are ~20-35KB and a Recorder export of a full funnel is similar.
+# This cap exists so a wrong file (a log, a HAR, a minified bundle) fails loudly here
+# instead of silently burning the model's context budget.
+MAX_REFERENCE_CHARS = 150_000
+
+
+def validate_reference(reference: Any) -> dict:
+    if not isinstance(reference, dict):
+        raise ValueError("Reference must be an object with 'kind' and 'content'")
+    kind = reference.get("kind")
+    if kind not in REFERENCE_KINDS:
+        raise ValueError(f'Reference has invalid kind "{kind}" (expected one of {sorted(REFERENCE_KINDS)})')
+    content = reference.get("content")
+    if not isinstance(content, str) or not content.strip():
+        raise ValueError("Reference 'content' must be a non-empty string")
+    for key in ("content", "sampleOutput"):
+        value = reference.get(key)
+        if isinstance(value, str) and len(value) > MAX_REFERENCE_CHARS:
+            raise ValueError(f"Reference '{key}' is {len(value)} chars (max {MAX_REFERENCE_CHARS}) — wrong file?")
+    mapping = reference.get("fieldMapping")
+    if mapping is not None and not isinstance(mapping, dict):
+        raise ValueError("Reference 'fieldMapping' must be an object of label -> booking key")
+    return reference
+
+
+def load_reference(source: Union[str, dict, None]) -> Optional[dict]:
+    """@param source - a reference dict, or a path (see `reference_from_path`), or None"""
+    if source is None:
+        return None
+    if isinstance(source, (str, os.PathLike)):
+        return reference_from_path(str(source))
+    return validate_reference(source)
+
+
+def reference_from_path(path: str, field_mapping: Optional[dict] = None) -> dict:
+    """Builds a reference from files on disk, so a Prometheus bundle or a DevTools Recorder
+    export can be handed over exactly as received:
+      - a directory (or .zip) containing `script.ts` (+ optional `data.json`) → prometheus-script
+      - a .json file with a top-level "steps" list (Chrome DevTools Recorder export) → devtools-recorder
+    """
+    p = Path(path)
+    if p.is_dir():
+        script = p / "script.ts"
+        if not script.is_file():
+            raise ValueError(f"{path}: no script.ts found — not a Prometheus bundle?")
+        sample = p / "data.json"
+        return validate_reference({
+            "kind": "prometheus-script",
+            "content": script.read_text(encoding="utf8"),
+            "sampleOutput": sample.read_text(encoding="utf8") if sample.is_file() else None,
+            "fieldMapping": field_mapping,
+        })
+
+    if zipfile.is_zipfile(p):
+        with zipfile.ZipFile(p) as zf:
+            names = {Path(n).name: n for n in zf.namelist() if not n.endswith("/")}
+            if "script.ts" not in names:
+                raise ValueError(f"{path}: zip has no script.ts — not a Prometheus bundle?")
+            return validate_reference({
+                "kind": "prometheus-script",
+                "content": zf.read(names["script.ts"]).decode("utf8"),
+                "sampleOutput": zf.read(names["data.json"]).decode("utf8") if "data.json" in names else None,
+                "fieldMapping": field_mapping,
+            })
+
+    if p.is_file() and p.suffix == ".json":
+        text = p.read_text(encoding="utf8")
+        try:
+            parsed = json.loads(text)
+        except json.JSONDecodeError as err:
+            raise ValueError(f"{path}: not valid JSON ({err})") from err
+        if isinstance(parsed, dict) and isinstance(parsed.get("steps"), list):
+            return validate_reference({"kind": "devtools-recorder", "content": text, "fieldMapping": field_mapping})
+        raise ValueError(f"{path}: JSON has no top-level 'steps' list — not a DevTools Recorder export?")
+
+    raise ValueError(f"{path}: expected a Prometheus bundle (dir/zip with script.ts) or a Recorder .json export")
 
 
 def load_funnel_recording(source: Union[str, dict]) -> dict:

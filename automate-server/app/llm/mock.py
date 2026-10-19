@@ -20,6 +20,14 @@ from typing import Any, Optional
 
 def mock_complete(purpose: str, user_content: Any) -> str:
     payload = extract_json_payload(user_content)
+    if purpose in ("convert", "repair") and not payload.get("funnel"):
+        # The offline stand-in only templates a script from a funnel recording's steps; it
+        # cannot read a reference. Generating from nothing would emit a zero-step script that
+        # trivially "passes" the audit gate -- fail loudly instead.
+        raise ValueError(
+            "Offline mock cannot convert a reference-only request (no funnel recording) — "
+            "set a live LLM key (ANTHROPIC_API_KEY / OPENAI_API_KEY) for reference-based generation."
+        )
     if purpose == "convert":
         return "```js\n" + generate_script_from_funnel(payload.get("funnel")) + "\n```"
     if purpose == "drift-check":

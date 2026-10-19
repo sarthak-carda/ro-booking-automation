@@ -105,13 +105,14 @@ async def trigger_vendor(vendor_id: str, request: Request):
     sample_booking = body.get("sampleBooking")
     second_sample_booking = body.get("secondSampleBooking")
     funnel = body.get("funnel")
+    reference = body.get("reference")
     credentials = body.get("credentials")
     auto_ship = body.get("autoShip")
 
-    if not sample_booking or not funnel:
+    if not sample_booking or not (funnel or reference):
         return JSONResponse(
             status_code=400,
-            content={"error": "sampleBooking and funnel are required to trigger the pipeline"},
+            content={"error": "sampleBooking and either funnel or reference are required to trigger the pipeline"},
         )
 
     try:
@@ -120,6 +121,7 @@ async def trigger_vendor(vendor_id: str, request: Request):
             sample_booking=sample_booking,
             second_sample_booking=second_sample_booking,
             funnel=funnel,
+            reference=reference,
             credentials=credentials,
             auto_ship=auto_ship if auto_ship is not None else True,
         )

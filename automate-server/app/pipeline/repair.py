@@ -39,25 +39,56 @@ DEFAULT_REPAIR_CAP = 3  # counts real audit_script() calls only -- diagnose_drif
 # pattern that trips a rate-limiter (directly observed against a real vendor site this week).
 REPAIR_BACKOFF_SECONDS = 3
 
-# Checked against error+DOM TOGETHER, not error alone -- a CAPTCHA/anti-bot challenge page
-# produces the IDENTICAL symptom as real selector drift (the expected element never renders,
-# so the script's own retry exhausts and throws the same "no element matched" shape either
-# way). The error string alone cannot distinguish "the vendor changed their page" from "the
-# vendor is blocking us" -- that's the whole reason audit.py now returns "dom" on failure.
-_BLOCKED_SIGNATURES = [
-    (re.compile(r"cf-chl|cf-turnstile|cloudflare", re.I), "cloudflare_challenge"),
+# Detecting "the vendor is blocking us" from a failing audit. Two hard-won rules:
+#
+# 1. A CAPTCHA/anti-bot interstitial produces the IDENTICAL symptom as real selector drift
+#    (the expected element never renders, so the script's own retry exhausts and throws the
+#    same "no element matched" error) -- the error string alone cannot tell them apart, which
+#    is why audit.py returns the page's DOM on failure.
+# 2. But raw keyword matching over a whole page is far too crude. Found on the first live run
+#    (TOSC, 2026-10-14): an ordinary booking page matched THREE of the four original patterns
+#    -- a `cdnjs.cloudflare.com` asset link, an invisible reCAPTCHA field embedded in the
+#    checkout form, and a "Sold out" label inside a calendar CSS variable -- so the repair loop
+#    declared the vendor "blocked" before attempting a single repair. A real challenge page is
+#    an INTERSTITIAL: it announces itself in its <title>, or it is a tiny page whose whole
+#    content is the challenge. So DOM markers only count on small pages, and a title match
+#    counts on any page. Text-level signals (sold out, rate limited) are only trusted in the
+#    audit's own error string, never scraped from page markup.
+_CHALLENGE_TITLE = re.compile(
+    r"just a moment|attention required|verify(ing)? (that )?you are (a )?human|checking your browser|"
+    r"are you a robot|access denied|security check",
+    re.I,
+)
+# Interstitial pages are a few KB (the real Cloudflare Turnstile page we hit was 5.5KB); real
+# booking pages are hundreds of KB. Markers below are only trusted under this size.
+SMALL_PAGE_CHARS = 40_000
+_CHALLENGE_MARKERS = [
+    (re.compile(r"cf-turnstile|cf-chl|cf_chl_opt|challenge-platform|id=[\"']challenge-", re.I), "cloudflare_challenge"),
     (re.compile(r"g-recaptcha|hcaptcha|h-captcha|data-sitekey", re.I), "captcha_challenge"),
-    (re.compile(r"sold[\s-]?out|no longer available|no availability", re.I), "inventory_unavailable"),
-    (re.compile(r"\b429\b|too many requests|rate limit", re.I), "rate_limited"),
 ]
+_ERROR_SIGNATURES = [
+    (re.compile(r"sold[\s-]?out|no longer available|no availability", re.I), "inventory_unavailable"),
+    (re.compile(r"(?:http|status|error)[\s:]*429|too many requests|rate[\s-]?limit", re.I), "rate_limited"),
+]
+
+
+def _page_title(dom: str) -> str:
+    match = re.search(r"<title[^>]*>(.*?)</title>", dom, re.I | re.S)
+    return match.group(1).strip() if match else ""
 
 
 def detect_environment_blocked(*, error: Optional[str], dom: Optional[str]) -> Optional[str]:
     """@returns a short label naming the detected blocker, or None if nothing matched."""
-    haystack = f"{error or ''}\n{dom or ''}"
-    for pattern, label in _BLOCKED_SIGNATURES:
-        if pattern.search(haystack):
+    for pattern, label in _ERROR_SIGNATURES:
+        if error and pattern.search(error):
             return label
+    if dom:
+        if _CHALLENGE_TITLE.search(_page_title(dom)):
+            return "cloudflare_challenge"
+        if len(dom) < SMALL_PAGE_CHARS:
+            for pattern, label in _CHALLENGE_MARKERS:
+                if pattern.search(dom):
+                    return label
     return None
 
 
@@ -83,7 +114,8 @@ def _reference_dom_for_step(funnel: dict, step_index: int) -> Optional[str]:
 async def repair_script(
     *,
     generation_request: dict,
-    funnel: dict,
+    funnel: Optional[dict] = None,
+    reference: Optional[dict] = None,
     script: str,
     booking: dict,
     portal_url: str,
@@ -94,7 +126,12 @@ async def repair_script(
     booking_label: str = "primary",
 ) -> dict:
     """@param generation_request - output of context_builder.build_generation_request
-    @param funnel - a validated funnel recording (see pipeline/capture.py)
+    @param funnel - a validated funnel recording (see pipeline/capture.py), or None when the
+      script was translated from a reference only. The narrow selector patch below is only
+      attempted when this is present: it locates the failing step by its index in the
+      recording (`const el<N> = findEl(...)`), which a reference-only script doesn't have.
+    @param reference - the reference the script was translated from (capture.load_reference),
+      handed to the broad repair so the model can compare against the verified selectors
     @param script - the script that failed `initial_audit`
     @param booking - test booking to re-audit against
     @param portal_url
@@ -137,7 +174,7 @@ async def repair_script(
 
         if not narrow_patch_tried:
             narrow_patch_tried = True
-            failing_step = parse_failing_step(current_audit.get("error"))
+            failing_step = parse_failing_step(current_audit.get("error")) if funnel else None
             if failing_step:
                 try:
                     diagnosis = await diagnose_drift(
@@ -167,6 +204,7 @@ async def repair_script(
                 script=current_script,
                 error=current_audit.get("error") or "",
                 dom=current_audit.get("dom"),
+                reference=reference,
             )
             patched_script = repaired["script"]
 

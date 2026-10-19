@@ -48,6 +48,43 @@ class TestDetectEnvironmentBlocked:
         assert detect_environment_blocked(error="429 Too Many Requests", dom=None) == "rate_limited"
 
 
+class TestDetectionDoesNotFlagOrdinaryPages:
+    """Regression for the first live run (TOSC, 2026-10-14): an ordinary booking page matched
+    three of the four original keyword patterns, so the loop declared the vendor "blocked"
+    before attempting a single repair. These are the exact things that page contained."""
+
+    NORMAL_PAGE = (
+        "<html><head><title>Admission Ticket - Example</title>"
+        '<link rel="dns-prefetch" href="//cdnjs.cloudflare.com">'
+        '<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/x/1.0/x.css"></head><body>'
+        '<div class="abc-datepicker" style="--soldout-label: &quot;Sold out&quot;;"></div>'
+        '<form><textarea id="g-recaptcha-response-1" name="g-recaptcha-response" class="g-recaptcha-response"></textarea>'
+        '<div data-sitekey="abc"></div></form>'
+        + ("<p>filler</p>" * 5000)
+        + "</body></html>"
+    )
+
+    def test_normal_page_with_cdn_link_invisible_recaptcha_and_sold_out_css_var_is_not_blocked(self):
+        assert len(self.NORMAL_PAGE) > 40_000
+        assert detect_environment_blocked(error=SELECTOR_ERROR, dom=self.NORMAL_PAGE) is None
+
+    def test_same_markup_on_a_tiny_interstitial_page_is_blocked(self):
+        tiny = '<html><body><div class="g-recaptcha" data-sitekey="abc"></div></body></html>'
+        assert detect_environment_blocked(error=SELECTOR_ERROR, dom=tiny) == "captcha_challenge"
+
+    def test_challenge_title_is_blocked_on_any_page_size(self):
+        # The real Cloudflare Turnstile interstitial we hit on Prado: title "Just a moment...".
+        page = "<html><head><title>Just a moment...</title></head><body>" + "x" * 60_000 + "</body></html>"
+        assert detect_environment_blocked(error=SELECTOR_ERROR, dom=page) == "cloudflare_challenge"
+
+    def test_sold_out_text_in_page_markup_alone_is_not_trusted(self):
+        assert detect_environment_blocked(error=SELECTOR_ERROR, dom="<p>Sold out</p>") is None
+
+    def test_a_429_inside_a_selector_is_not_a_rate_limit(self):
+        error = 'Step 2 (click): no element matched candidates ["li:nth-child(429) a"]'
+        assert detect_environment_blocked(error=error, dom=None) is None
+
+
 @pytest.mark.asyncio
 async def test_blocked_on_initial_audit_spends_zero_repair_attempts():
     blocked_initial = _audit(dom="<div class='g-recaptcha'></div>")
@@ -184,13 +221,14 @@ async def test_run_pipeline_guarantees_second_booking_at_least_one_repair_attemp
     async def fake_audit_script(*, script, booking, credentials=None, portal_url):
         return {"pass": False, "status": "ERROR", "error": "boom", "dom": None, "screenshots": []}
 
-    async def fake_convert(generation_request, funnel_):
+    async def fake_convert(generation_request, funnel_, reference=None):
         return {"script": "window.HeadoutAutomation = {};", "mocked": True}
 
     repair_calls = []
 
     async def fake_repair_script(*, generation_request, funnel, script, booking, portal_url,
-                                  credentials=None, initial_audit, cap, on_attempt=None, booking_label="primary"):
+                                  credentials=None, initial_audit, cap, on_attempt=None, booking_label="primary",
+                                  reference=None):
         repair_calls.append({"booking_label": booking_label, "cap": cap})
         # Primary booking "resolves", but only after using up the ENTIRE cap it was given --
         # the scenario this guarantee exists for.

@@ -80,7 +80,12 @@ async def _complete_anthropic(system: str, user_content: Any) -> dict:
 
     client = AsyncAnthropic(api_key=config.anthropic_api_key)
     try:
-        response = await client.messages.create(
+        # Streamed, not a plain `messages.create`: the SDK refuses a non-streaming call whose
+        # max_tokens implies a >10-minute request, and a full multi-page vendor script
+        # (~10K tokens of output, measured on a real 34KB Prado script) plus the model's
+        # own thinking needs more headroom than the old 16000 that fit single-page scripts.
+        # `get_final_message()` returns the same Message object `create` would have.
+        async with client.messages.stream(
             model=config.anthropic_model,
             system=system,
             messages=[{"role": "user", "content": user_content}],
@@ -90,10 +95,20 @@ async def _complete_anthropic(system: str, user_content: Any) -> dict:
             # "max_tokens"), leaving zero tokens for the actual text/code response.
             # Thinking tokens count against max_tokens, so this needs real headroom
             # for both, not just the expected size of the final script/JSON.
-            max_tokens=16000,
-        )
+            max_tokens=32000,
+        ) as stream:
+            response = await stream.get_final_message()
     except Exception as err:  # anthropic.APIStatusError and friends carry the body on str(err)
         raise RuntimeError(f"Anthropic API returned an error: {str(err)[:500]}") from err
+
+    # A truncated script is syntactically broken JS that would only surface later as a
+    # confusing audit failure (and could be handed to a repair pass as if it were a real
+    # script bug). Fail here, where the real cause is visible.
+    if getattr(response, "stop_reason", None) == "max_tokens":
+        raise RuntimeError(
+            "Anthropic response was cut off at max_tokens before finishing "
+            f"(usage={getattr(response, 'usage', None)!r}) — the output would be truncated."
+        )
 
     text = "".join(
         block.text for block in (response.content or []) if getattr(block, "type", None) == "text"

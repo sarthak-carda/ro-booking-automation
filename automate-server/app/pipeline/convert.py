@@ -29,17 +29,29 @@ from typing import Optional
 
 from app.llm.client import complete
 
-# Mirrors app/self_heal/drift_check.py's MAX_DOM_CHARS/_truncate_dom pattern (not imported
-# directly -- that module's helper is underscore-private to its own narrow-patch use case,
-# and a DOM snapshot attached to a repair prompt is cost/context-budget noise past this size
-# either way, same reasoning as drift_check.py's own comment).
-MAX_DOM_CHARS = 40_000
+# What a repair pass sees after compaction. Real vendor pages are ~200KB of which most is
+# scripts, styles, SVG and tracking markup; head-truncating the raw HTML to 40KB showed the
+# model mostly <head> boilerplate. Strip that first, then truncate what's left.
+MAX_REPAIR_DOM_CHARS = 60_000
+_NOISE_BLOCKS = re.compile(r"<(script|style|noscript|svg|template)\b[\s\S]*?</\1\s*>", re.I)
+_COMMENTS = re.compile(r"<!--[\s\S]*?-->")
+_VOID_NOISE = re.compile(r"<(link|meta)\b[^>]*>", re.I)
 
 
-def _truncate_dom(dom: Optional[str]) -> Optional[str]:
-    if not isinstance(dom, str) or len(dom) <= MAX_DOM_CHARS:
+def _compact_dom(dom: Optional[str]) -> Optional[str]:
+    """Drops markup that never helps diagnose an interaction failure (scripts, styles, SVG,
+    comments, <link>/<meta>) and collapses whitespace, then truncates to MAX_REPAIR_DOM_CHARS."""
+    if not isinstance(dom, str):
         return dom
-    return dom[:MAX_DOM_CHARS] + f"\n<!-- truncated at {MAX_DOM_CHARS} chars -->"
+    compact = _NOISE_BLOCKS.sub("", dom)
+    compact = _COMMENTS.sub("", compact)
+    compact = _VOID_NOISE.sub("", compact)
+    compact = re.sub(r"\s+", " ", compact)
+    if len(compact) <= MAX_REPAIR_DOM_CHARS:
+        return compact
+    return compact[:MAX_REPAIR_DOM_CHARS] + f"\n<!-- truncated at {MAX_REPAIR_DOM_CHARS} chars -->"
+
+
 
 CONTRACT = r"""You are generating a browser-injected JavaScript file for a Headout Revenue
 Operations automation extension. The script MUST:
@@ -302,6 +314,99 @@ Operations automation extension. The script MUST:
       };
     }
     ```
+14. CLICK WITH A NATIVE EVENT SEQUENCE, NOT A BARE `.click()` (real, confirmed live on a real
+    vendor — do not skip this). A custom date-picker/stepper/dropdown widget often listens for
+    mousedown/mouseup rather than (or in addition to) click, so a bare `el.click()` can run
+    without error yet never register with the widget — the page then looks like nothing was
+    selected, and every downstream control stays blocked, which reads as "sold out" or "bot
+    detection" when it is neither. Define ONE helper and use it for every click on a widget
+    (plain links/submit buttons that already worked with `.click()` in the funnel recording or
+    reference may keep it). Always scroll the element into view first — a cell can report as
+    visible while sitting outside the viewport mid-transition, and the events then silently miss:
+    ```js
+    async function nativeClick(el) {
+      el.scrollIntoView({ block: "center", inline: "center" });
+      await new Promise((r) => setTimeout(r, 100));
+      const rect = el.getBoundingClientRect();
+      const opts = { bubbles: true, cancelable: true, view: window, button: 0,
+                     clientX: rect.left + rect.width / 2, clientY: rect.top + rect.height / 2 };
+      for (const type of ["mousedown", "mouseup", "click"]) el.dispatchEvent(new MouseEvent(type, opts));
+    }
+    ```
+    Call it as `await nativeClick(el<N>);` on the line AFTER the verbatim `const el<N> = findEl(...)`.
+15. CHECK REAL STATE, NEVER JUST PRESENCE (real, confirmed live — do not skip this). Before
+    skipping a step on the grounds that it is "already done" (a retry guard), or when deciding
+    what a page's current state is, test the actual state — a selected/active class, an input's
+    current value, a `hidden` class being ABSENT, `offsetParent !== null` — never merely that an
+    element exists in the DOM. Containers for later steps are very often present from first page
+    load, only hidden; "this panel exists, so the date must already be picked" is true on every
+    fresh page and makes the script silently skip the step on every run.
+16. PAGE-IDENTITY MARKERS MUST BE UNIQUE TO THAT PAGE (real, confirmed live — do not skip this).
+    When dispatching by page (item 10), match the pathname EXACTLY (allowing only a trailing
+    slash/query), never with `includes`/`startsWith`: a loose match also catches sibling pages
+    (e.g. `/checkout/` vs the add-ons page at `/checkout/cart/`), and the dispatcher then
+    runs the wrong section forever. Likewise, never use a field as the "I'm on the final form"
+    marker unless it exists ONLY on that page — other pages often embed hidden copies of
+    similar forms (e.g. a login form with an email field). Prefer a field that cannot exist
+    elsewhere (a confirm-email input, a field specific to that step) and treat every other path
+    under the same prefix as an intermediate page to click through.
+17. CLICK A NAVIGATION CONTROL ONCE, THEN WAIT; VERIFY EVERY CLICK LANDED (real, confirmed live
+    — do not skip this). (a) A button that starts a page transition or request must be clicked
+    ONCE, then given a long window (10s+) to complete before any retry: every extra click while
+    the request is in flight re-submits it and can wedge the page. Never re-click it inside a
+    short polling loop. (b) Before clicking a "continue/go to payment" control, wait until it is
+    genuinely enabled — and remember a control can carry a `disabled` CLASS while still being a
+    working `<a href>` that navigates anyway, straight to a page whose data does not exist yet. A
+    stepper/quantity change often updates a cart asynchronously (~2s); wait for the cart/total to
+    reflect it first. (c) After every click whose effect is observable (a quantity, a selected
+    slot, a total), read that effect back and poll/retry until it matches the target; a click can
+    silently fail to register, and a flat `await sleep(700)` between clicks ends in a false
+    PAYMENT_REQUIRED with an empty cart.
+18. CLEAN VALUES AND DO NOT ASSUME THE SITE'S LANGUAGE (real, confirmed live — do not skip
+    this). `trim()` every string read from `booking` before typing it into a vendor form — real
+    booking data carries trailing spaces ("Muck "), which vendor forms reject as "invalid
+    format". Sites also render differently by locale/session (a fresh or incognito session may
+    be in another language than the one captured): match options on stable values (ISO codes,
+    `value` attributes, ids, `data-*` attributes) rather than on display text, and keep
+    SEVERAL candidates for anything that can vary (cookie-consent providers change over time:
+    list every banner selector seen, current one first).
+19. REFERENCE MATERIAL (only when the request includes a "Reference" section). A reference is a
+    previously VERIFIED run of this exact flow, written for a DIFFERENT runtime (a Playwright
+    script driving a hosted cloud browser, or a recording exported from a browser's recorder)
+    — it cannot be injected as-is, so you are TRANSLATING it, not copying it:
+    - TREAT as ground truth: its selectors (put them first in the `findEl` candidate lists),
+      the order of operations, its waits, its conditionals/fallbacks (e.g. "if that ticket type
+      is unavailable use this one"), loops (e.g. month navigation) and where it stops.
+    - DROP: anything about the runtime — `page.goto`, browser/session creation, API keys,
+      CLI-flag parsing, `process.exit`, SDK imports. The script runs inside the vendor page the
+      agent already opened; a real navigation destroys it and the extension re-injects it on
+      the next page, so use item 10's dispatcher instead of `waitForURL`/`goto`.
+    - TRANSLATE: Playwright `locator.click()`/`fill()` do real input, scroll and auto-wait —
+      use `nativeClick` (item 14), the native value setter, and bounded polls
+      (`waitForSelector`/`waitForTimeout` become polling loops with a deadline).
+    - INPUTS: whatever the reference takes as parameters (CLI flags, constants at the top) are
+      the booking fields — map them using the booking schema above and the field mapping if one
+      is given. NEVER copy a sample value out of the reference or its sample output (a guest
+      name, a date, an email) into the script as a constant; read it from `booking`. Where a
+      mapping is ambiguous, prefer the booking field with the same meaning over inventing one.
+      An input with NO booking field at all (typically a time slot) is not yours to invent: use
+      the reference's own default for it (usually the first available option).
+    - THE REFERENCE'S SELECTORS AND ATTRIBUTE PLACEMENT WIN OVER YOUR OWN KNOWLEDGE OF "STANDARD"
+      WIDGET MARKUP (real, observed: a model "corrected" a verified `td[data-handler=...][data-month=...]
+      a[data-date=...]` selector into `a[data-handler=...]` because standard jQuery-UI puts those
+      attributes on the `<a>`, wrote a confident comment saying so, and the script then failed on
+      every attempt — sites customise widgets). Never rewrite a verified selector to match what you
+      expect; copy its structure exactly and only parameterise the booking-derived parts.
+    - DEFINE EACH SELECTOR ONCE. A month-navigation loop's probe ("is the target month showing
+      yet?") and the final lookup of the target cell must be built from the SAME selector
+      expression (a single const), never two hand-written variants — if they disagree the loop
+      never recognises the target, keeps clicking "next", and overshoots (observed: a calendar
+      left on June 2027 for a November 2026 booking).
+    - STOP where the reference stops, or earlier if it would cross item 3's point of no return.
+    - When NO funnel recording is provided, number your `findEl` steps sequentially from 0
+      (item 9's "step index from the funnel recording" has nothing to refer to).
+    - Its input validation (`OUT_OF_SCOPE`-style errors for an unsupported date, pax, etc.)
+      becomes `{ status: "ERROR", error: "..." }`, never a throw out of `run()`.
 
 Note on timing: a field can be genuinely absent (real drift) or simply not yet rendered
 (an async-loaded checkout step). Do not call `findEl` a single time and immediately throw —
@@ -344,35 +449,94 @@ Respond with ONLY the JavaScript, in a single ```js fenced code block."""
 _CODE_BLOCK_RE = re.compile(r"```(?:js|javascript)?[ \t]*\r?\n([\s\S]*?)```")
 
 
-async def convert_funnel_to_script(generation_request: dict, funnel: dict) -> dict:
-    """@param generation_request - output of context_builder.build_generation_request
-    @param funnel - a validated funnel recording (see pipeline/capture.py)
-    @returns {"script": str, "mocked": bool}
-    """
+def _build_user_text(generation_request: dict, funnel: Optional[dict], reference: Optional[dict]) -> str:
+    """The shared "what to build" half of the Stage 2 and Stage 2.5 prompts: booking schema,
+    then whichever ground truth exists (a funnel recording, a reference, or both), then the
+    vendor. At least one of funnel/reference must be present (run_pipeline enforces this)."""
     booking_schema_json = json.dumps(generation_request.get("bookingSchemaSample"), indent=2)
-    funnel_json = json.dumps({"funnel": funnel}, indent=2)
     requires_credentials = generation_request.get("requiresCredentials")
 
-    user_text = "\n".join([
+    parts = [
         "## Booking JSON schema (sample, real shape from Aries):",
         "```json",
         booking_schema_json,
         "```",
         "",
-        "## Funnel recording (ordered steps captured from the live vendor portal):",
-        "```json",
-        funnel_json,
-        "```",
-        "",
+    ]
+    if funnel:
+        parts += [
+            "## Funnel recording (ordered steps captured from the live vendor portal):",
+            "```json",
+            json.dumps({"funnel": funnel}, indent=2),
+            "```",
+            "",
+        ]
+    else:
+        parts += [
+            "## No funnel recording was captured for this vendor — the Reference below is the",
+            "## only ground truth. Number `findEl` steps sequentially from 0 (contract item 19).",
+            "",
+        ]
+    if reference:
+        parts += _reference_block(reference)
+    parts += [
         f"## Vendor: {generation_request.get('vendorName')} ({generation_request.get('portalUrl')})",
         # JS template-literal string coercion of a boolean lowercases it ("true"/"false"),
         # unlike Python's default str(bool) ("True"/"False") -- match the JS output exactly.
         f"Login required: {'true' if requires_credentials else 'false'}",
-    ])
+    ]
+    return "\n".join(parts)
+
+
+def _reference_block(reference: dict) -> list:
+    """Reference content goes in a long, non-`json` fence on purpose: (a) a Prometheus script
+    can contain triple backticks of its own, and (b) app/llm/mock.py merges the top-level keys
+    of every ```json block it finds into one payload, which a pasted Recorder export (it has
+    its own "steps" key) must not pollute."""
+    fence = "`````"
+    lines = [
+        f"## Reference (kind: {reference.get('kind')}) — a previously VERIFIED run of this flow,",
+        "## written for a different runtime. Translate it per contract item 19; do not copy it.",
+        fence + "text",
+        reference["content"],
+        fence,
+        "",
+    ]
+    if reference.get("sampleOutput"):
+        lines += [
+            "### Sample output of a successful run of the reference (shows the state it reached;",
+            "### its values are SAMPLE data, never constants to copy into the script):",
+            fence + "text",
+            reference["sampleOutput"],
+            fence,
+            "",
+        ]
+    if reference.get("fieldMapping"):
+        lines += [
+            "### Field mapping (reference input / label -> dotted path into `booking`):",
+            "```text",
+            json.dumps(reference["fieldMapping"], indent=2),
+            "```",
+            "",
+        ]
+    return lines
+
+
+async def convert_funnel_to_script(
+    generation_request: dict, funnel: Optional[dict] = None, reference: Optional[dict] = None,
+) -> dict:
+    """@param generation_request - output of context_builder.build_generation_request
+    @param funnel - a validated funnel recording (see pipeline/capture.py), or None
+    @param reference - a validated reference (capture.validate_reference), or None. At least
+      one of funnel/reference is required.
+    @returns {"script": str, "mocked": bool}
+    """
+    if not funnel and not reference:
+        raise ValueError("convert_funnel_to_script needs a funnel recording, a reference, or both")
 
     result = await complete(
         system=CONTRACT,
-        user_content=[{"type": "text", "text": user_text}],
+        user_content=[{"type": "text", "text": _build_user_text(generation_request, funnel, reference)}],
         purpose="convert",
     )
 
@@ -380,46 +544,42 @@ async def convert_funnel_to_script(generation_request: dict, funnel: dict) -> di
 
 
 async def repair_funnel_script(
-    generation_request: dict, funnel: dict, script: str, error: str, dom: Optional[str] = None,
+    generation_request: dict, funnel: Optional[dict], script: str, error: str,
+    dom: Optional[str] = None, reference: Optional[dict] = None,
 ) -> dict:
     """Stage 2.5's (app/pipeline/repair.py) broad whole-script repair path — used when
     the narrow single-selector self-heal patch doesn't apply or didn't fix a failing
     audit. Deliberately reuses CONTRACT verbatim as the system prompt (see module
-    docstring) and the same booking-schema/funnel framing as convert_funnel_to_script,
-    with the failing script, the audit's error, and a DOM snapshot at the point of
-    failure appended so the model can see what actually broke, not just regenerate
-    blind. Caller is responsible for the audit (not this function) and for enforcing
-    a real-attempt budget — this just asks the model for a corrected script once.
+    docstring) and the same booking-schema/funnel/reference framing as
+    convert_funnel_to_script, with the failing script, the audit's error, and a DOM snapshot
+    at the point of failure appended so the model can see what actually broke, not just
+    regenerate blind. Caller is responsible for the audit (not this function) and for
+    enforcing a real-attempt budget — this just asks the model for a corrected script once.
 
     @param generation_request - output of context_builder.build_generation_request
-    @param funnel - a validated funnel recording (see pipeline/capture.py)
+    @param funnel - a validated funnel recording (see pipeline/capture.py), or None
     @param script - the current, failing script source
     @param error - the audit's error message for that script
     @param dom - a DOM snapshot captured at the point of failure (audit.py's "dom"), if any
+    @param reference - the reference the script was translated from, if any
     @returns {"script": str, "mocked": bool}
     """
-    booking_schema_json = json.dumps(generation_request.get("bookingSchemaSample"), indent=2)
-    funnel_json = json.dumps({"funnel": funnel}, indent=2)
-    requires_credentials = generation_request.get("requiresCredentials")
-
     user_text = "\n".join([
-        "## Booking JSON schema (sample, real shape from Aries):",
-        "```json",
-        booking_schema_json,
-        "```",
-        "",
-        "## Funnel recording (ordered steps captured from the live vendor portal):",
-        "```json",
-        funnel_json,
-        "```",
-        "",
-        f"## Vendor: {generation_request.get('vendorName')} ({generation_request.get('portalUrl')})",
-        f"Login required: {'true' if requires_credentials else 'false'}",
+        _build_user_text(generation_request, funnel, reference),
         "",
         "## This script already exists and FAILED a real audit run against the live vendor",
         "## site. Fix it -- do not just regenerate from scratch and discard what already",
         "## works; the failure below is specific, fix that specifically. The contract above",
-        "## (including items 10-13) still applies in full, with no exceptions.",
+        "## (including items 10-19) still applies in full, with no exceptions.",
+        "##",
+        "## The step named in the error is often only where the problem SURFACED, not where it",
+        "## started. Before editing that step's selectors, read the DOM snapshot and check the",
+        "## page is in the state the script assumed at that point: is a calendar showing the",
+        "## month the booking needs (or did a navigation loop overshoot it)? is the expected",
+        "## panel open, the option selected, the earlier click actually registered? If an earlier",
+        "## step left the page in the wrong state, fix THAT step. Compare against the Reference's",
+        "## verified selectors and keep them as written. Do not guess at selectors the DOM",
+        "## snapshot does not show.",
         "",
         "### Current (failing) script:",
         "```js",
@@ -430,7 +590,7 @@ async def repair_funnel_script(
         error,
     ])
     if dom:
-        user_text += "\n\n### DOM snapshot at the point of failure:\n```html\n" + _truncate_dom(dom) + "\n```"
+        user_text += "\n\n### DOM snapshot at the point of failure:\n```html\n" + _compact_dom(dom) + "\n```"
 
     result = await complete(
         system=CONTRACT,

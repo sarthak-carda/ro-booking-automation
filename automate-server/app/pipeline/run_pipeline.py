@@ -14,7 +14,7 @@ from typing import Any, Optional
 
 from app.db import runs, vendors
 from app.pipeline.context_builder import build_generation_request
-from app.pipeline.capture import load_funnel_recording
+from app.pipeline.capture import load_funnel_recording, load_reference
 from app.pipeline.convert import convert_funnel_to_script
 from app.pipeline.repair import DEFAULT_REPAIR_CAP, repair_script
 from app.pipeline.ship import ship_script
@@ -42,12 +42,17 @@ async def run_vendor_pipeline(
     credentials: Optional[dict] = None,
     auto_ship: bool = True,
     reviewed_by: Optional[str] = None,
+    reference: Any = None,
 ) -> dict:
     """@param vendor
     @param sample_booking - used for Stage 0 + Stage 3 (first test booking)
     @param second_sample_booking - a different booking to prove the script isn't
       overfit (test checklist item)
     @param funnel - a funnel recording dict, or a path to one
+    @param reference - alternative/addition to `funnel`: a verified run of the same flow
+      (Prometheus script, DevTools Recorder export...) for Stage 2 to translate. A dict, or a
+      path (see capture.reference_from_path). At least one of funnel/reference is required;
+      with no funnel the narrow selector self-heal patch is skipped (it needs step indices).
     @param credentials - test/sandbox credentials only
     @param auto_ship - ship automatically if audit passes (still requires a human to
       have reviewed the script upstream in real usage)
@@ -86,11 +91,17 @@ async def run_vendor_pipeline(
     try:
         record({"status": "capturing"})
         generation_request = build_generation_request(vendor, sample_booking)
-        recording = load_funnel_recording(funnel)
-        push_step("capture", "ok", {"steps": len(recording.get("steps") or [])})
+        if not funnel and not reference:
+            raise ValueError("A funnel recording or a reference is required")
+        recording = load_funnel_recording(funnel) if funnel else None
+        reference_doc = load_reference(reference) if reference else None
+        push_step("capture", "ok", {
+            "steps": len((recording or {}).get("steps") or []),
+            "reference": reference_doc.get("kind") if reference_doc else None,
+        })
 
         record({"status": "converting"})
-        convert_result = await convert_funnel_to_script(generation_request, recording)
+        convert_result = await convert_funnel_to_script(generation_request, recording, reference_doc)
         script = convert_result["script"]
         mocked = convert_result["mocked"]
         push_step("convert", "ok", {"mocked": mocked})
@@ -107,6 +118,7 @@ async def run_vendor_pipeline(
             repair_result = await repair_script(
                 generation_request=generation_request,
                 funnel=recording,
+                reference=reference_doc,
                 script=script,
                 booking=sample_booking,
                 portal_url=vendor.get("portalUrl"),
@@ -151,6 +163,7 @@ async def run_vendor_pipeline(
                 repair_result = await repair_script(
                     generation_request=generation_request,
                     funnel=recording,
+                    reference=reference_doc,
                     script=script,
                     booking=second_sample_booking,
                     portal_url=vendor.get("portalUrl"),
