@@ -1,8 +1,8 @@
 {
   "manifest_version": 3,
-  "name": "Headout Vendor Autofill (POC — Prado/TOSC only)",
-  "version": "1.1.0",
-  "description": "POC build: Prado + TOSC/midaticket.com only, no automate-server required. From a Zendesk ticket, look up the booking in Aries and autofill the vendor form. Shares the Ory session with *.headout.com.",
+  "name": "Headout Vendor Autofill (POC — Prado/TOSC/Panorama/OPA)",
+  "version": "1.2.0",
+  "description": "POC build: Prado, TOSC, Panorama Langkawi and OPA Pisa, no automate-server required. From a Zendesk ticket, look up the booking in Aries and autofill the vendor form. Shares the Ory session with *.headout.com.",
   "action": {
     "default_popup": "popup.html",
     "default_title": "Headout Vendor Autofill",
@@ -21,7 +21,13 @@
     "service_worker": "background.js",
     "type": "module"
   },
-  "permissions": ["tabs", "storage", "cookies", "declarativeNetRequest", "userScripts"],
+  "permissions": [
+    "tabs",
+    "storage",
+    "cookies",
+    "declarativeNetRequest",
+    "userScripts"
+  ],
   "host_permissions": [
     "https://*.headout.com/*",
     "https://*.test-headout.com/*",
@@ -31,10 +37,26 @@
   ],
   "content_scripts": [
     {
-      "matches": ["https://*.zendesk.com/agent/*"],
-      "js": ["content.js"],
-      "css": ["content.css"],
+      "matches": [
+        "https://*.zendesk.com/agent/*"
+      ],
+      "js": [
+        "content.js"
+      ],
+      "css": [
+        "content.css"
+      ],
       "run_at": "document_idle"
+    }
+  ],
+  "web_accessible_resources": [
+    {
+      "resources": [
+        "credentials.html"
+      ],
+      "matches": [
+        "https://*.zendesk.com/*"
+      ]
     }
   ]
 }

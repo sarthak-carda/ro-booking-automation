@@ -10,8 +10,12 @@
 import { getEnvironment } from "./config.js";
 import { fetchBooking, fetchGuestDetails, resolveVendorLink } from "./lib/aries.js";
 import { computeTotalPax, normalizeGuestDetails } from "./lib/booking-normalize.js";
+import { resolveGuestCountry } from "./lib/guest-country.js";
 import { fetchAutofillScript, runAutofillOnTab } from "./lib/autofill.js";
-import { MESSAGES, BOOKING_STATUS } from "./lib/messages.js";
+import { MESSAGES, BOOKING_STATUS, ERROR_CODES } from "./lib/messages.js";
+import { clearCredential, credentialStatus, getCredential, setCredential } from "./lib/credentials.js";
+import { redactSecrets } from "./lib/redact.js";
+import { hostOf, needsPseudoEmail, vendorForLink } from "./lib/vendors.js";
 import { isAuthenticated } from "./lib/session.js";
 import { createTab, waitForTabLoad } from "./lib/tabs.js";
 import { reportBookingEvent } from "./lib/telemetry.js";
@@ -21,12 +25,14 @@ const LOG = "[Headout Autofill]";
 /**
  * Booking id -> vendor link -> automation up to payment.
  * @param {string|number} bookingId
+ * @param {{ cardCountry?: string | null } | undefined} ticketHints Facts read off the Zendesk ticket
+ *   that Aries lacks (the card country), used to work out the guest's country.
  * @param {string} pseudoEmail Pseudo (volitand/veritt/gmail) email from the ticket's internal
  *   comments. Replaces the guest's real email on the vendor form, per vendor booking
  *   instructions -- the guest's real address must never be given to a non-partnered vendor.
  * @returns {Promise<{ link: string, status: string, result: object }>}
  */
-async function runBookingAutofill(bookingId, pseudoEmail) {
+async function runBookingAutofill(bookingId, pseudoEmail, ticketHints) {
   const env = await getEnvironment();
 
   const [bookingDetails, rawGuestDetails] = await Promise.all([
@@ -38,18 +44,32 @@ async function runBookingAutofill(bookingId, pseudoEmail) {
   // the exact real API shapes that made every vendor script's guestDetails.firstName/
   // lastName/email/phone/address reads resolve to undefined, and totalPax silently default
   // to 1, on every real ticket run. Normalize both into the flat shape scripts actually read.
+  const guest = normalizeGuestDetails(rawGuestDetails);
+  const country = resolveGuestCountry(rawGuestDetails, { phone: guest.phone, cardCountry: ticketHints?.cardCountry });
   const booking = {
     ...bookingDetails,
     totalPax: computeTotalPax(bookingDetails),
-    guestDetails: { ...normalizeGuestDetails(rawGuestDetails), email: pseudoEmail },
+    // Never the guest's real address: vendors get the ticket's pseudo mail (or, for vendors whose
+    // instructions fix a contact email, the script supplies it and this stays empty).
+    guestDetails: { ...guest, email: pseudoEmail ?? "", country, isMalaysian: country.isMalaysian },
   };
   const link = await resolveVendorLink(env, booking);
+  if (needsPseudoEmail(link) && !pseudoEmail) {
+    throw new Error(ERROR_CODES.PSEUDO_EMAIL_MISSING);
+  }
   const script = await fetchAutofillScript(link);
 
-  const tab = await createTab(link);
+  // Vendors behind a login get whatever the agent saved this browser session (or null). The
+  // credential only ever goes into the injected script's `ctx`; every outbound value below is
+  // redacted before it is logged, reported or returned to the page.
+  const vendor = vendorForLink(link);
+  const credentials = vendor?.login ? await getCredential(hostOf(link)) : null;
+
+  const tab = await createTab(vendor?.startUrl ?? link);
   await waitForTabLoad(tab.id);
   const started = Date.now();
-  const result = await runAutofillOnTab(tab.id, script, booking);
+  const rawResult = await runAutofillOnTab(tab.id, script, booking, { credentials });
+  const result = redactSecrets(rawResult, credentials);
   const durationMs = Date.now() - started;
 
   const status = result?.status ?? BOOKING_STATUS.ERROR;
@@ -66,7 +86,12 @@ async function runBookingAutofill(bookingId, pseudoEmail) {
   });
 
   console.log(`${LOG} booking ${bookingId} -> ${status} on ${link}`, result);
-  return { link, status, result };
+  return {
+    link,
+    status,
+    result,
+    vendor: vendor?.login ? { host: hostOf(link), label: vendor.label } : null,
+  };
 }
 
 /**
@@ -97,14 +122,33 @@ const HANDLERS = {
     return {};
   },
 
-  [MESSAGES.RUN_BOOKING_AUTOFILL]: ({ bookingId, pseudoEmail }) => runBookingAutofill(bookingId, pseudoEmail),
+  [MESSAGES.RUN_BOOKING_AUTOFILL]: ({ bookingId, pseudoEmail, ticketHints }) => runBookingAutofill(bookingId, pseudoEmail, ticketHints),
 
   [MESSAGES.PAYMENT_DECISION]: ({ paid }) => acceptPaymentDecision(Boolean(paid)),
+
+  // Vendor logins (see lib/credentials.js). Replies carry usernames and flags, never passwords.
+  [MESSAGES.CREDENTIAL_STATUS]: async () => ({ status: await credentialStatus() }),
+  [MESSAGES.SET_CREDENTIAL]: async ({ host, username, password }) => {
+    await setCredential(host, { username, password });
+    return { status: await credentialStatus() };
+  },
+  [MESSAGES.CLEAR_CREDENTIAL]: async ({ host }) => {
+    await clearCredential(host);
+    return { status: await credentialStatus() };
+  },
 };
 
-chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
+/** Credential messages are for extension pages only (popup / credentials panel), never content scripts. */
+const EXTENSION_ONLY = new Set([MESSAGES.CREDENTIAL_STATUS, MESSAGES.SET_CREDENTIAL, MESSAGES.CLEAR_CREDENTIAL]);
+const isExtensionPage = (sender) => sender?.id === chrome.runtime.id && (sender.url ?? "").startsWith(chrome.runtime.getURL(""));
+
+chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   const handler = HANDLERS[message?.type];
   if (!handler) return false;
+  if (EXTENSION_ONLY.has(message.type) && !isExtensionPage(sender)) {
+    sendResponse({ ok: false, error: "FORBIDDEN" });
+    return false;
+  }
 
   Promise.resolve(handler(message))
     .then((data) => sendResponse({ ok: true, ...data }))

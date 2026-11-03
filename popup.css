@@ -98,3 +98,15 @@ select {
   color: var(--muted);
   text-align: center;
 }
+
+.section-title {
+  margin: 4px 0 0;
+  font-size: 13px;
+}
+
+.creds-frame {
+  width: 100%;
+  height: 330px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+}

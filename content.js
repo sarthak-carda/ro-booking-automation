@@ -12,7 +12,13 @@
   // Mirrors of lib/messages.js — content scripts can't import modules. Keep in sync.
   const RUN_BOOKING_AUTOFILL = "RUN_BOOKING_AUTOFILL";
   const PAYMENT_DECISION = "PAYMENT_DECISION";
-  const STATUS = { PAYMENT_REQUIRED: "PAYMENT_REQUIRED", CONFIRMED: "CONFIRMED", ERROR: "ERROR" };
+  const STATUS = {
+    PAYMENT_REQUIRED: "PAYMENT_REQUIRED",
+    CONFIRMED: "CONFIRMED",
+    ERROR: "ERROR",
+    LOGIN_NEEDED: "LOGIN_NEEDED",
+    LOGIN_FAILED: "LOGIN_FAILED",
+  };
 
   const CONTROL_ID = "hd-autofill-control";
   const BUTTON_ID = "hd-autofill-btn";
@@ -80,6 +86,14 @@
    * Email"), which must not be picked up. Falls back to an address containing this
    * booking's id (`name_<bookingId>@...`) if the label is missing.
    */
+  /**
+   * "Payment Card Country: GB" from the ticket body -- a proxy for the guest's country, used when
+   * Aries has no nationality field (see lib/guest-country.js).
+   */
+  function getCardCountry() {
+    return getVisibleTicketText().match(/Payment\s*Card\s*Country\s*:\s*([A-Z]{2})\b/)?.[1] ?? null;
+  }
+
   function getPseudoEmail(bookingId) {
     const body = getVisibleTicketText();
     const labelled = body.match(/Pseudo\s*Mail(?:\s*ID)?\s*[:\-]\s*([^\s|,;<>]+@[^\s|,;<>]+)/i)?.[1];
@@ -112,16 +126,24 @@
         return "Enable 'Allow user scripts'";
       case "AUTOMATION_API_MISSING":
         return "Script has no automation API";
+      case "PSEUDO_EMAIL_MISSING":
+        return "Pseudo mail not found in ticket comments";
       default:
         return `Failed${code ? `: ${code}` : ""}`;
     }
   }
 
   /** Switch the button into the post-payment "confirm" mode. */
-  function enterConfirmMode(control) {
+  function enterConfirmMode(control, result = {}) {
     mode = "confirm";
     control.classList.add("hd-autofill-control--confirm");
-    setConfirmStatus(control, "Script worked?");
+    const note = confirmNote(result);
+    setConfirmStatus(control, note ? `Script worked? ${note}` : "Script worked?");
+  }
+
+  /** A step the script left to the agent ("Agree & continue", "Confirm"), if any. */
+  function confirmNote(result) {
+    return result.awaiting ? `Press "${result.awaiting}" on the portal.` : "";
   }
 
   function resetToRun(button, label = IDLE_LABEL) {
@@ -166,14 +188,16 @@
       return;
     }
 
+    // May be null: whether it is required depends on the vendor, which only the service worker
+    // knows (it replies PSEUDO_EMAIL_MISSING for vendors that need it).
     const pseudoEmail = await pollFor(() => getPseudoEmail(bookingId));
-    if (!pseudoEmail) {
-      button.disabled = false;
-      flashError(button, "Pseudo mail not found in ticket comments");
-      return;
-    }
 
-    const response = await sendMessage({ type: RUN_BOOKING_AUTOFILL, bookingId, pseudoEmail });
+    const response = await sendMessage({
+      type: RUN_BOOKING_AUTOFILL,
+      bookingId,
+      pseudoEmail,
+      ticketHints: { cardCountry: getCardCountry() },
+    });
     button.disabled = false;
 
     if (!response?.ok) {
@@ -188,12 +212,21 @@
     // homepage) still showed the "Script worked?" Yes/No prompt, exactly as if it had reached
     // payment. ERROR must flash the real failure instead of asking the agent to confirm
     // something that never happened.
-    if (response.status === STATUS.CONFIRMED) {
+    if (response.status === STATUS.LOGIN_NEEDED || response.status === STATUS.LOGIN_FAILED) {
+      const label = response.vendor?.label ?? "the vendor portal";
+      flashError(
+        button,
+        response.status === STATUS.LOGIN_NEEDED
+          ? `Login needed for ${label}: open ▾ and save it`
+          : `Login failed for ${label}: re-enter it in ▾`
+      );
+      openCredentialsPanel(response.vendor?.host);
+    } else if (response.status === STATUS.CONFIRMED) {
       flashSuccess(button, result.reference ? `Booked ✓ ${result.reference}` : "Booked ✓");
     } else if (response.status === STATUS.ERROR) {
       flashError(button, result.error ? `Failed: ${result.error}` : "Automation failed");
     } else {
-      enterConfirmMode(button.closest(`#${CONTROL_ID}`));
+      enterConfirmMode(button.closest(`#${CONTROL_ID}`), result);
     }
   }
 
@@ -251,6 +284,31 @@
       });
   }
 
+/**
+ * Dropdown next to Automate for vendor logins. The form is an extension-origin iframe
+ * (credentials.html), not DOM injected into Zendesk: Zendesk's own scripts (and any other
+ * extension) can read form fields in the page, but cannot reach into a cross-origin iframe, and
+ * the password goes straight from that iframe to the service worker.
+ */
+  function getPanel() {
+    return document.querySelector(`#${CONTROL_ID} .hd-cred-panel`);
+  }
+
+  function openCredentialsPanel(focusHost) {
+    const panel = getPanel();
+    if (!panel) return;
+    const query = focusHost ? `?focus=${encodeURIComponent(focusHost)}` : "";
+    // Reload on every open so the saved/not-saved chips are current.
+    panel.querySelector("iframe").src = chrome.runtime.getURL(`credentials.html${query}`);
+    panel.hidden = false;
+  }
+
+  function toggleCredentialsPanel() {
+    const panel = getPanel();
+    if (panel?.hidden === false) panel.hidden = true;
+    else openCredentialsPanel();
+  }
+
   function createControl() {
     const control = document.createElement("div");
     control.id = CONTROL_ID;
@@ -283,7 +341,25 @@
     noButton.addEventListener("click", () => confirmPayment(button, false));
 
     confirm.append(status, yesButton, noButton);
-    control.append(button, confirm);
+
+    const caret = document.createElement("button");
+    caret.id = "hd-autofill-caret";
+    caret.type = "button";
+    caret.className = "hd-autofill-caret";
+    caret.title = "Vendor logins";
+    caret.setAttribute("aria-label", "Vendor logins");
+    caret.textContent = "▾";
+    caret.addEventListener("click", toggleCredentialsPanel);
+
+    const panel = document.createElement("div");
+    panel.className = "hd-cred-panel";
+    panel.hidden = true;
+    const frame = document.createElement("iframe");
+    frame.className = "hd-cred-panel__frame";
+    frame.title = "Vendor logins";
+    panel.append(frame);
+
+    control.append(button, caret, confirm, panel);
     return control;
   }
 

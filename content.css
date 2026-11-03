@@ -62,10 +62,11 @@
 
 .hd-payment-confirm__status {
   min-width: 142px;
-  font-size: 14px;
+  max-width: 460px;
+  font-size: 13px;
   font-weight: 700;
-  line-height: 1.2;
-  white-space: nowrap;
+  line-height: 1.25;
+  white-space: normal;
 }
 
 .hd-payment-confirm__status--error {
@@ -108,4 +109,53 @@
 
 .hd-payment-confirm__choice--no:hover:not(:disabled) {
   background: #991b1b;
+}
+
+#hd-autofill-control.hd-autofill-control {
+  position: fixed; /* anchor for the dropdown below */
+}
+
+.hd-autofill-caret {
+  align-self: stretch;
+  margin-left: 2px;
+  padding: 0 10px;
+  border: none;
+  border-radius: 4px;
+  background: #6d28d9;
+  color: #fff;
+  font-size: 15px;
+  line-height: 1;
+  cursor: pointer;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.25);
+}
+
+.hd-autofill-caret:hover {
+  background: #5b21b6;
+}
+
+#hd-autofill-control.hd-autofill-control--confirm .hd-autofill-caret {
+  display: none;
+}
+
+.hd-cred-panel {
+  position: absolute;
+  top: calc(100% + 6px);
+  right: 0;
+  width: 330px;
+  border: 1px solid #d1d5db;
+  border-radius: 8px;
+  background: #fff;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.25);
+  overflow: hidden;
+}
+
+.hd-cred-panel[hidden] {
+  display: none;
+}
+
+.hd-cred-panel__frame {
+  display: block;
+  width: 100%;
+  height: 330px;
+  border: 0;
 }
